@@ -54,9 +54,15 @@ module Sidekiq
 
       # Hooks throttler into sidekiq.
       #
+      # @param options [Hash]
+      # @option options [Fetch] :fetcher (nil)
+      #   Sidekiq fetcher to use for fetching jobs.
+      # @option options [Boolean] :enhanced_queues (true)
+      #   Enabled pausable queues & enhanced queues tab in Web.
       # @return [void]
-      def setup!
+      def setup!(fetcher: Sidekiq.options[:fetch])
         Sidekiq.configure_server do |config|
+          config.options[:fetcher] = fetcher
           setup_strategy!(config)
 
           require "sidekiq/throttled/middleware"
@@ -71,14 +77,8 @@ module Sidekiq
       # @param [String] message Job's JSON payload
       # @return [Boolean]
       def throttled?(message)
-        message = JSON.parse message
-        job = message.fetch("wrapped") { message.fetch("class") { return false } }
-        jid = message.fetch("jid") { return false }
-
-        preload_constant! job
-
-        Registry.get job do |strategy|
-          return strategy.throttled?(jid, *message["args"])
+        with_strategy_and_job(message) do |strategy, jid, args|
+          return strategy.throttled? jid, *args
         end
 
         false
@@ -86,7 +86,23 @@ module Sidekiq
         false
       end
 
+      # Manual reset throttle for job that had been orphaned.
+      #
+      # @param [String] message Job's JSON payload
+      # @return [Void]
+      def recover!(message)
+        with_strategy_and_job(message) do |strategy, jid, args|
+          strategy.finalize! jid, *args
+        end
+      end
+
       private
+
+      # @return [void]
+      def setup_enhanced_queues!
+        Communicator.instance.setup!
+        QueuesPauser.instance.setup!
+      end
 
       # @return [void]
       def setup_strategy!(sidekiq_config)
@@ -95,7 +111,21 @@ module Sidekiq
         # https://github.com/mperham/sidekiq/commit/67daa7a408b214d593100f782271ed108686c147
         sidekiq_config = sidekiq_config.options if Gem::Version.new(Sidekiq::VERSION) < Gem::Version.new("6.5.0")
 
+        sidekiq_config[:fetcher] ||= Sidekiq::BasicFetch.new(sidekiq_config)
         sidekiq_config[:fetch] = Sidekiq::Throttled::Fetch.new(sidekiq_config)
+      end
+
+      # @return [Void]
+      def with_strategy_and_job(message)
+        message = JSON.parse message
+        job = message.fetch("wrapped") { message.fetch("class") { return false } }
+        jid = message.fetch("jid") { return false }
+
+        preload_constant! job
+
+        strategy = Registry.get job
+
+        yield(strategy, jid, message["args"])
       end
 
       # Tries to preload constant by it's name once.
