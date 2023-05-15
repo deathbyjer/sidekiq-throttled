@@ -7,11 +7,11 @@ gem "rake"
 gem "sidekiq"
 
 group :test do
-  gem "apparition"
   gem "capybara"
-  gem "puma"
+
+  gem "rack"
+  gem "rack-session"
   gem "rack-test"
-  gem "sinatra"
 
   gem "rspec"
   gem "timecop"

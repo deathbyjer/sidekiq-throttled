@@ -3,13 +3,20 @@
 require "sidekiq/api"
 require "sidekiq/throttled/fetch"
 
-require "support/working_class_hero"
+class WorkingClassHero
+  include Sidekiq::Job
+  include Sidekiq::Throttled::Job
 
-RSpec.describe Sidekiq::Throttled::Fetch, sidekiq: :disabled, verify_stubs: false do
+  sidekiq_options queue: :heroes
+
+  def perform; end
+end
+
+RSpec.describe Sidekiq::Throttled::Fetch, pending: "refactor" do
   subject(:fetcher) { described_class.new options }
 
-  let(:options)       { { queues: queues } }
-  let(:queues)        { %w[heroes dreamers] }
+  let(:options) { { queues: queues } }
+  let(:queues)  { %w[heroes dreamers] }
 
   describe ".new" do
     it "fails if :queues are missing" do

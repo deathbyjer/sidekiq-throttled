@@ -4,12 +4,14 @@
 require "sidekiq"
 
 # internal
-require "sidekiq/throttled/version"
-require "sidekiq/throttled/configuration"
-require "sidekiq/throttled/registry"
-require "sidekiq/throttled/job"
-require "sidekiq/throttled/worker"
-require "sidekiq/throttled/utils"
+require_relative "./throttled/version"
+require_relative "./throttled/configuration"
+require_relative "./throttled/fetch"
+require_relative "./throttled/registry"
+require_relative "./throttled/job"
+require_relative "./throttled/middleware"
+require_relative "./throttled/worker"
+require_relative "./throttled/utils"
 
 # @see https://github.com/mperham/sidekiq/
 module Sidekiq
@@ -57,11 +59,10 @@ module Sidekiq
       # @return [void]
       def setup!
         Sidekiq.configure_server do |config|
-          setup_strategy!(config)
-
-          require "sidekiq/throttled/middleware"
-          config.server_middleware do |chain|
-            chain.add Sidekiq::Throttled::Middleware
+          if Gem::Version.new("7.0.0") <= Gem::Version.new(Sidekiq::VERSION)
+            config[:fetch_class] = Sidekiq::Throttled::Fetch
+          else
+            config[:fetch] = Sidekiq::Throttled::Fetch.new(config)
           end
         end
       end
@@ -88,18 +89,6 @@ module Sidekiq
 
       private
 
-      # @return [void]
-      def setup_strategy!(sidekiq_config)
-        require "sidekiq/throttled/fetch"
-
-        if Gem::Version.new("7.0.0") <= Gem::Version.new(Sidekiq::VERSION)
-          sidekiq_config[:fetch_class] = Sidekiq::Throttled::Fetch7
-          sidekiq_config[:fetch_setup] = sidekiq_config
-        else
-          sidekiq_config[:fetch] = Sidekiq::Throttled::Fetch.new(sidekiq_config)
-        end
-      end
-
       # Tries to preload constant by it's name once.
       #
       # Somehow, sometimes, some classes are not eager loaded upon Rails init,
@@ -115,6 +104,12 @@ module Sidekiq
           @preloaded[job] ||= constantize(job) || true
         end
       end
+    end
+  end
+
+  configure_server do |config|
+    config.server_middleware do |chain|
+      chain.add Sidekiq::Throttled::Middleware
     end
   end
 end
