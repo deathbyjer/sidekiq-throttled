@@ -14,9 +14,9 @@ module Sidekiq
         yield
       ensure
 
-        Rails.logger.info "______________________________"
-        Rails.logger.info msg.inspect
-        Rails.logger.info _worker.inspect
+        Sidekiq.logger.info "______________________________"
+        Sidekiq.logger.info msg.inspect
+        Sidekiq.logger.info _worker.inspect
         Registry.get msg["class"] do |strategy|
           strategy.finalize!(msg["jid"], *msg["args"])
         end
